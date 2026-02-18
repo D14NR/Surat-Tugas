@@ -8,10 +8,11 @@ const PELAYANAN_URL =
   "https://docs.google.com/spreadsheets/d/1-EwYoIjBgl-zSdpReESV1UKzxbexTcXKxDBO0KrGwZg/gviz/tq?tqx=out:json&sheet=Pelayanan";
 const PERMINTAAN_URL =
   "https://docs.google.com/spreadsheets/d/1PQNdVQUJa-YQaWv-KZdIC7WE3VVlRAxpX5XT79NMJos/gviz/tq?tqx=out:json&sheet=Permintaan";
-const PERMINTAAN_APPS_SCRIPT_URL =
+// Satu URL Apps Script untuk semua aksi (permintaan + profil)
+const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbxghMzspCQmcKgJnPvRSryEpMgGkOzYvQJI-ijqf2cB9Gpo28qyN7efyUa3QQcSCidv/exec";
-const PENGAJAR_APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbwkhbZMYbTCQYOd8RYBHXbHR6b0BiLOUTE5rVTSOk630h2xz4rj1GW6BwyMXzSMsIJE/exec";
+const PERMINTAAN_APPS_SCRIPT_URL = APPS_SCRIPT_URL;
+const PENGAJAR_APPS_SCRIPT_URL = APPS_SCRIPT_URL;
 const AUTH_STORAGE_KEY = "surat-tugas-auth";
 
 const monthNames = [
@@ -576,6 +577,7 @@ export function App() {
     password: string;
   }) => {
     const bodyPayload = {
+      action: "updateProfil",
       kodePengajar: payload.kodePengajar,
       "Kode Pengajar": payload.kodePengajar,
       nama: payload.nama,
@@ -583,12 +585,16 @@ export function App() {
       bidangStudi: payload.bidangStudi,
       "Bidang Studi": payload.bidangStudi,
       email: payload.email,
+      "Email": payload.email,
       whatsapp: payload.whatsapp,
+      noWhatsApp: payload.whatsapp,
       "No.WhatsApp": payload.whatsapp,
       domisili: payload.domisili,
+      "Domisili": payload.domisili,
       username: payload.username,
+      "Username": payload.username,
       password: payload.password,
-      action: "update-pengajar",
+      "Password": payload.password,
     };
 
     const tryFetch = async (mode: RequestMode) =>
@@ -599,10 +605,10 @@ export function App() {
         body: JSON.stringify(bodyPayload),
       });
 
-    const tryForm = async () => {
+    const tryForm = async (url: string) => {
       const formBody = new URLSearchParams();
       Object.entries(bodyPayload).forEach(([k, v]) => formBody.append(k, v));
-      return fetch(PENGAJAR_APPS_SCRIPT_URL, {
+      return fetch(url, {
         method: "POST",
         mode: "no-cors",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -618,12 +624,12 @@ export function App() {
       if (!data?.success) throw new Error(data?.message || "Gagal menyimpan perubahan profil.");
       return { success: true, opaque: false };
     } catch (error) {
-      try {
-        await tryForm();
-        return { success: true, opaque: true };
-      } catch (fallbackError) {
-        throw (fallbackError instanceof Error ? fallbackError : error);
-      }
+              try {
+          await tryForm(PENGAJAR_APPS_SCRIPT_URL);
+          return { success: true, opaque: true };
+        } catch (fallbackError) {
+          throw (fallbackError instanceof Error ? fallbackError : error);
+        }
     }
   };
 
