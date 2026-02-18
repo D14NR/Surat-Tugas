@@ -32,8 +32,6 @@ type SuratTugas = {
   dateObj: Date | null; sesi: string[];
 };
 
-type LeaderboardRecord = { nama: string; durasi: number; cabang: string };
-
 type LeaderboardStats = {
   pelayananTerbanyak: { nama: string; jumlah: number }[];
   durasiTerbanyak: { nama: string; totalDurasi: number }[];
@@ -216,6 +214,7 @@ export function App() {
   const [showProfilPassword, setShowProfilPassword] = useState(false);
   const [showProfilKonfirmasi, setShowProfilKonfirmasi] = useState(false);
   const [authInitializing, setAuthInitializing] = useState(true);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
   const today = useMemo(() => {
     const current = new Date();
@@ -242,6 +241,7 @@ export function App() {
     } catch {
       setAuthInitializing(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authInitializing, pengajar]);
 
   useEffect(() => {
@@ -258,6 +258,37 @@ export function App() {
     });
     setProfilMessage("");
     setProfilError("");
+  }, [pengajar]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!pengajar) return;
+    const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+    let refreshUsername = pengajar.username;
+    let refreshPassword = pengajar.password;
+
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as { username?: string; password?: string };
+        refreshUsername = parsed.username || refreshUsername;
+        refreshPassword = parsed.password || refreshPassword;
+      } catch {
+        // fallback to current state
+      }
+    }
+
+    if (!refreshUsername || !refreshPassword) return;
+
+    const interval = window.setInterval(() => {
+      void performLogin(refreshUsername, refreshPassword, true);
+    }, 10 * 60 * 1000);
+
+    return () => window.clearInterval(interval);
   }, [pengajar]);
 
   const { allStats, filteredStats, todayJadwal, groupedFilteredJadwal, groupedTodayJadwal } = useMemo(() => {
@@ -289,7 +320,7 @@ export function App() {
       }).filter((value): value is NonNullable<typeof value> => Boolean(value))
     );
 
-    const allStats = computeStats(jadwal, today);
+    const _allStats = computeStats(jadwal, today);
     let filtered = jadwal;
 
     if (jadwalFilter === "monthly" && filterMonth) {
@@ -305,12 +336,12 @@ export function App() {
       filtered = jadwal.filter((item) => item.dateObj ? item.dateObj.getDay() === weekdayIndex : false);
     }
 
-    const filteredStats = computeStats(filtered, today);
-    const todayJadwal = jadwal.filter((item) => item.dateObj?.getTime() === today.getTime());
-    const groupedFilteredJadwal = groupJadwal(filtered);
-    const groupedTodayJadwal = groupJadwal(todayJadwal);
+    const _filteredStats = computeStats(filtered, today);
+    const _todayJadwal = jadwal.filter((item) => item.dateObj?.getTime() === today.getTime());
+    const _groupedFilteredJadwal = groupJadwal(filtered);
+    const _groupedTodayJadwal = groupJadwal(_todayJadwal);
 
-    return { allStats, filteredStats, todayJadwal, groupedFilteredJadwal, groupedTodayJadwal };
+    return { allStats: _allStats, filteredStats: _filteredStats, todayJadwal: _todayJadwal, groupedFilteredJadwal: _groupedFilteredJadwal, groupedTodayJadwal: _groupedTodayJadwal };
   }, [suratTugas, today, jadwalFilter, filterMonth, filterWeekday]);
 
   const permintaanPengajar = useMemo(() => {
@@ -409,7 +440,7 @@ export function App() {
       const durasiIndex = pelayananSheet.headers.findIndex((h) => normalizeHeader(h) === normalizeHeader("Durasi"));
       const cabangIndex = pelayananSheet.headers.findIndex((h) => normalizeHeader(h) === normalizeHeader("Cabang"));
 
-      const pelayananData: LeaderboardRecord[] = pelayananSheet.values.map((row) => ({
+      const pelayananData = pelayananSheet.values.map((row) => ({
         nama: row[namaIndex] ?? "", durasi: parseDuration(row[durasiIndex] ?? ""), cabang: row[cabangIndex] ?? "",
       }));
 
@@ -624,12 +655,12 @@ export function App() {
       if (!data?.success) throw new Error(data?.message || "Gagal menyimpan perubahan profil.");
       return { success: true, opaque: false };
     } catch (error) {
-              try {
-          await tryForm(PENGAJAR_APPS_SCRIPT_URL);
-          return { success: true, opaque: true };
-        } catch (fallbackError) {
-          throw (fallbackError instanceof Error ? fallbackError : error);
-        }
+      try {
+        await tryForm(PENGAJAR_APPS_SCRIPT_URL);
+        return { success: true, opaque: true };
+      } catch (fallbackError) {
+        throw (fallbackError instanceof Error ? fallbackError : error);
+      }
     }
   };
 
@@ -720,6 +751,7 @@ export function App() {
 
       if (noChanges) {
         setProfilMessage("Tidak ada perubahan yang disimpan.");
+        setToast({ message: "Tidak ada perubahan yang disimpan.", type: "info" });
         return;
       }
     }
@@ -743,7 +775,9 @@ export function App() {
       });
     } catch (profileError) {
       setProfilLoading(false);
-      setProfilError(profileError instanceof Error ? profileError.message : "Gagal menyimpan perubahan profil ke spreadsheet.");
+      const message = profileError instanceof Error ? profileError.message : "Gagal menyimpan perubahan profil ke spreadsheet.";
+      setProfilError(message);
+      setToast({ message, type: "error" });
       return;
     }
 
@@ -775,6 +809,8 @@ export function App() {
 
     setProfilLoading(false);
     setProfilMessage("Perubahan profil berhasil disimpan.");
+    setToast({ message: "Profil berhasil diperbarui. Selamat datang kembali di dashboard!", type: "success" });
+    setActiveTab("dashboard");
   };
 
   // ─── Login Page ───────────────────────────────────────────────────────────
@@ -879,6 +915,24 @@ export function App() {
   // ─── Main App ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-100 flex">
+      {toast && (
+        <div className="fixed top-6 right-6 z-50">
+          <div
+            className={`flex items-center gap-3 rounded-2xl px-4 py-3 shadow-lg border text-sm font-semibold ${
+              toast.type === "success"
+                ? "bg-green-600 border-green-500 text-white"
+                : toast.type === "error"
+                ? "bg-red-600 border-red-500 text-white"
+                : "bg-gray-900 border-gray-800 text-white"
+            }`}
+          >
+            <span>
+              {toast.type === "success" ? "✅" : toast.type === "error" ? "⚠️" : "ℹ️"}
+            </span>
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white shadow-xl flex flex-col transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 lg:static lg:flex`}>
         {/* Sidebar Header */}
@@ -978,8 +1032,13 @@ export function App() {
                 </span>
               </button>
             )}
-            <div className="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center text-white font-bold text-sm">
-              {pengajar.nama.charAt(0).toUpperCase()}
+            <div className="flex flex-col items-center">
+              <div className="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center text-white font-bold text-sm">
+                {pengajar.nama.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-[11px] text-gray-500 font-semibold mt-1 max-w-[90px] truncate">
+                {pengajar.nama}
+              </span>
             </div>
           </div>
         </header>
@@ -1093,65 +1152,48 @@ export function App() {
                 ))}
               </div>
 
-              {/* Profil + Jadwal Hari Ini */}
-              <div className="grid lg:grid-cols-[1fr_2fr] gap-6">
-                {/* Profil */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-                  <div className="w-14 h-14 bg-red-600 rounded-2xl flex items-center justify-center text-white font-bold text-2xl mb-4">
-                    {pengajar.nama.charAt(0).toUpperCase()}
+              {/* Jadwal Hari Ini */}
+              <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Jadwal Hari Ini</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">{toDateLabel(today)}</p>
                   </div>
-                  <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Nama Pengajar</p>
-                  <p className="text-gray-900 font-bold text-lg mt-1">{pengajar.nama}</p>
-                  <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mt-4">Bidang Studi</p>
-                  <p className="text-gray-700 font-semibold text-sm mt-1">{pengajar.bidangStudi}</p>
-                  <div className="mt-4 pt-4 border-t border-gray-100">
-                    <p className="text-xs text-gray-400">Kode: <span className="text-gray-700 font-semibold">{pengajar.kode}</span></p>
-                  </div>
+                  <span className="bg-red-50 text-red-600 text-xs font-bold px-3 py-1.5 rounded-full border border-red-200">
+                    {todayJadwal.length} Sesi
+                  </span>
                 </div>
 
-                {/* Jadwal Hari Ini */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-bold text-gray-900">Jadwal Hari Ini</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">{toDateLabel(today)}</p>
+                {groupedTodayJadwal.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mb-3">
+                      <span className="text-2xl">📭</span>
                     </div>
-                    <span className="bg-red-50 text-red-600 text-xs font-bold px-3 py-1.5 rounded-full border border-red-200">
-                      {todayJadwal.length} Sesi
-                    </span>
+                    <p className="text-gray-500 font-semibold text-sm">Tidak ada jadwal hari ini</p>
+                    <p className="text-gray-400 text-xs mt-1">Nikmati hari Anda!</p>
                   </div>
-
-                  {groupedTodayJadwal.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-10 text-center">
-                      <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mb-3">
-                        <span className="text-2xl">📭</span>
-                      </div>
-                      <p className="text-gray-500 font-semibold text-sm">Tidak ada jadwal hari ini</p>
-                      <p className="text-gray-400 text-xs mt-1">Nikmati hari Anda!</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {groupedTodayJadwal.map((item, index) => (
-                        <div key={`${item.tanggal}-${index}`} className="border border-red-100 bg-red-50 rounded-xl p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded-full">
-                              {item.sessions.length} Sesi · {item.kodePengajar}
-                            </span>
-                            <span className="text-xs text-red-400">{item.tanggal}</span>
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {item.sessions.map((session) => (
-                              <div key={`${item.tanggal}-${session.sesiKe}`} className="bg-white rounded-lg px-3 py-2 text-sm border border-red-100">
-                                <span className="font-bold text-red-600 text-xs">Sesi {session.sesiKe}</span>
-                                <p className="text-gray-700 text-xs mt-0.5">{session.materi}</p>
-                              </div>
-                            ))}
-                          </div>
+                ) : (
+                  <div className="space-y-3">
+                    {groupedTodayJadwal.map((item, index) => (
+                      <div key={`${item.tanggal}-${index}`} className="border border-red-100 bg-red-50 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-1 rounded-full">
+                            {item.sessions.length} Sesi · {item.kodePengajar}
+                          </span>
+                          <span className="text-xs text-red-400">{item.tanggal}</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {item.sessions.map((session) => (
+                            <div key={`${item.tanggal}-${session.sesiKe}`} className="bg-white rounded-lg px-3 py-2 text-sm border border-red-100">
+                              <span className="font-bold text-red-600 text-xs">Sesi {session.sesiKe}</span>
+                              <p className="text-gray-700 text-xs mt-0.5">{session.materi}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
